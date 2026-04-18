@@ -6,6 +6,9 @@ from PIL import Image, ImageStat
 
 from .tool_checks import run_command
 
+MAX_PIXEL_ANALYSIS_PIXELS = 8_000_000
+PROFILE_SAMPLE_SIZE = (768, 768)
+
 
 def analyze_image(path: Path) -> dict:
     result: dict = {
@@ -19,13 +22,27 @@ def analyze_image(path: Path) -> dict:
         with Image.open(path) as img:
             result["dimensions"] = {"width": img.width, "height": img.height}
             result["mode"] = img.mode
-            result["lsb"] = basic_lsb_scan(img)
             result["image_profile"] = image_profile(img)
+            pixel_count = img.width * img.height
+            if pixel_count > MAX_PIXEL_ANALYSIS_PIXELS:
+                result["lsb"] = {
+                    "note": (
+                        "Pixel-level LSB scan skipped because the image is large enough to risk "
+                        "exhausting the web worker. Use an offline workstation for full bit-plane review."
+                    ),
+                    "ascii_preview": "",
+                    "ones_ratio": 0,
+                    "severity": "Informational",
+                    "skipped": True,
+                    "pixel_count": pixel_count,
+                }
+            else:
+                result["lsb"] = basic_lsb_scan(img)
     except Exception as exc:
         result["image_error"] = str(exc)
 
     if path.suffix.lower() in {".png", ".bmp"}:
-        zsteg_raw = run_command(["zsteg", "-a", str(path)], timeout=60)
+        zsteg_raw = run_command(["zsteg", "-a", str(path)], timeout=20)
         result["zsteg"]["available"] = zsteg_raw.get("returncode") is not None or zsteg_raw.get("ok")
         result["zsteg"]["raw"] = zsteg_raw
         if zsteg_raw.get("stdout"):
@@ -42,12 +59,16 @@ def analyze_image(path: Path) -> dict:
 
 def basic_lsb_scan(img: Image.Image) -> dict:
     rgb = img.convert("RGB")
-    pixels = list(rgb.getdata())
+    pixels = []
+    for index, pixel in enumerate(rgb.getdata()):
+        if index >= 50000:
+            break
+        pixels.append(pixel)
     if not pixels:
         return {"note": "No pixels read", "ascii_preview": "", "ones_ratio": 0}
 
     bits = []
-    for r, g, b in pixels[:50000]:
+    for r, g, b in pixels:
         bits.extend([r & 1, g & 1, b & 1])
 
     if not bits:
@@ -89,7 +110,9 @@ def basic_lsb_scan(img: Image.Image) -> dict:
 
 
 def image_profile(img: Image.Image) -> dict:
-    rgb = img.convert("RGB")
+    sample = img.copy()
+    sample.thumbnail(PROFILE_SAMPLE_SIZE)
+    rgb = sample.convert("RGB")
     stat = ImageStat.Stat(rgb)
     means = [round(value, 2) for value in stat.mean]
     stddev = [round(value, 2) for value in stat.stddev]

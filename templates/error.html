@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stegama | {{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="result-page">
+<header class="site-nav">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="Stegama home">
+        <span class="brand-mark">S</span>
+        <span>Stegama</span>
+    </a>
+    <nav class="nav-links" aria-label="Report actions">
+        <a href="{{ url_for('index') }}">New analysis</a>
+    </nav>
+</header>
+
+<main class="report-shell">
+    <section class="report-hero">
+        <div class="score-dial" style="--score-percent: 0%;">
+            <span>!</span>
+            <small>safe stop</small>
+        </div>
+        <div class="report-title">
+            <p class="eyebrow">Scan interrupted</p>
+            <h1>{{ title }}</h1>
+            <p>{{ message }}</p>
+        </div>
+        <div class="report-status">
+            <span class="status-pill severity-high">Review needed</span>
+        </div>
+    </section>
+
+    <article class="report-panel">
+        <div class="panel-heading">
+            <h2>What happened</h2>
+            <span class="status-pill severity-medium">Handled error</span>
+        </div>
+        <p>
+            The uploaded artifact was saved, but one analysis module failed. Try a smaller artifact,
+            use Quick Scan, or check Render logs for the full Python traceback.
+        </p>
+        {% if detail %}
+            <details class="raw-block">
+                <summary>Error detail</summary>
+                <pre>{{ detail }}</pre>
+            </details>
+        {% endif %}
+    </article>
+</main>
+</body>
+</html>

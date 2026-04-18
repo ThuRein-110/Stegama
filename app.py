@@ -35,8 +35,11 @@ def create_app() -> Flask:
     def index():
         return render_template("index.html")
 
-    @app.route("/analyze", methods=["POST"])
+    @app.route("/analyze", methods=["GET", "POST"])
     def analyze():
+        if request.method == "GET":
+            return redirect(url_for("index"))
+
         if "file" not in request.files:
             flash("No file part found in request.", "error")
             return redirect(url_for("index"))
@@ -57,9 +60,18 @@ def create_app() -> Flask:
         uploaded.save(save_path)
 
         scan_mode = request.form.get("scan_mode", "quick")
-        result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
-        report_path = REPORT_DIR / f"{save_path.stem}.json"
-        report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        try:
+            result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
+            report_path = REPORT_DIR / f"{save_path.stem}.json"
+            report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            app.logger.exception("Stegama analysis failed for %s", filename)
+            return render_template(
+                "error.html",
+                title="Analysis could not complete",
+                message="Stegama safely stopped this scan instead of returning a broken gateway response.",
+                detail=str(exc),
+            ), 500
 
         return render_template("result.html", result=result, report_filename=report_path.name)
 
@@ -82,9 +94,18 @@ def create_app() -> Flask:
         uploaded.save(save_path)
 
         scan_mode = request.form.get("scan_mode", "quick")
-        result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
-        report_path = REPORT_DIR / f"{save_path.stem}.json"
-        report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        try:
+            result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
+            report_path = REPORT_DIR / f"{save_path.stem}.json"
+            report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            app.logger.exception("Stegama API analysis failed for %s", filename)
+            return jsonify({
+                "error": "analysis_failed",
+                "message": "Stegama safely stopped this scan.",
+                "detail": str(exc),
+            }), 500
+
         result["report_download"] = url_for("download_report", filename=report_path.name)
         return jsonify(result)
 
