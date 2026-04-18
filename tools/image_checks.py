@@ -20,6 +20,7 @@ def analyze_image(path: Path) -> dict:
             result["dimensions"] = {"width": img.width, "height": img.height}
             result["mode"] = img.mode
             result["lsb"] = basic_lsb_scan(img)
+            result["image_profile"] = image_profile(img)
     except Exception as exc:
         result["image_error"] = str(exc)
 
@@ -71,9 +72,40 @@ def basic_lsb_scan(img: Image.Image) -> dict:
         note = "LSB distribution looks balanced; hidden content is possible but not proven"
 
     stat = ImageStat.Stat(rgb)
+    severity = "Low"
+    if 0.49 <= ones_ratio <= 0.51:
+        severity = "Medium"
+    elif ones_ratio < 0.35 or ones_ratio > 0.65:
+        severity = "Medium"
+
     return {
         "note": note,
         "ascii_preview": "".join(chars[:256]),
         "ones_ratio": round(ones_ratio, 4),
         "channel_mean": [round(v, 2) for v in stat.mean],
+        "channel_stddev": [round(v, 2) for v in stat.stddev],
+        "severity": severity,
+    }
+
+
+def image_profile(img: Image.Image) -> dict:
+    rgb = img.convert("RGB")
+    stat = ImageStat.Stat(rgb)
+    means = [round(value, 2) for value in stat.mean]
+    stddev = [round(value, 2) for value in stat.stddev]
+    spread = max(means) - min(means)
+    note = "Color channels are within an expected broad distribution for first-look triage."
+    severity = "Low"
+    if spread > 75:
+        note = "One color channel differs strongly from the others; review bit planes or channel-specific content."
+        severity = "Medium"
+    if max(stddev) < 8:
+        note = "Very low channel variation may indicate a flat carrier, padding, or generated image content."
+        severity = "Medium"
+
+    return {
+        "channel_mean": means,
+        "channel_stddev": stddev,
+        "color_distribution_note": note,
+        "severity": severity,
     }

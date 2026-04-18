@@ -14,7 +14,8 @@ BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 REPORT_DIR = BASE_DIR / "reports"
 ALLOWED_EXTENSIONS = {
-    "png", "jpg", "jpeg", "bmp", "gif", "webp", "wav", "au", "txt", "bin", "zip"
+    "png", "jpg", "jpeg", "bmp", "gif", "webp", "wav", "au", "txt", "bin", "zip",
+    "pdf", "docx", "xlsx", "pptx", "jar", "exe", "dll", "elf", "so"
 }
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB
 
@@ -30,6 +31,7 @@ def create_app() -> Flask:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
     @app.route("/", methods=["GET"])
+    @app.route("/analysis", methods=["GET"])
     def index():
         return render_template("index.html")
 
@@ -54,7 +56,8 @@ def create_app() -> Flask:
         save_path = UPLOAD_DIR / saved_name
         uploaded.save(save_path)
 
-        result = analyze_file(save_path)
+        scan_mode = request.form.get("scan_mode", "quick")
+        result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
         report_path = REPORT_DIR / f"{save_path.stem}.json"
         report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -78,7 +81,8 @@ def create_app() -> Flask:
         save_path = UPLOAD_DIR / saved_name
         uploaded.save(save_path)
 
-        result = analyze_file(save_path)
+        scan_mode = request.form.get("scan_mode", "quick")
+        result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
         report_path = REPORT_DIR / f"{save_path.stem}.json"
         report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
         result["report_download"] = url_for("download_report", filename=report_path.name)
@@ -87,6 +91,11 @@ def create_app() -> Flask:
     @app.route("/reports/<path:filename>", methods=["GET"])
     def download_report(filename: str):
         return send_from_directory(REPORT_DIR, filename, as_attachment=True)
+
+    @app.errorhandler(413)
+    def file_too_large(_error):
+        flash("Artifact exceeds the 50 MB upload limit.", "error")
+        return redirect(url_for("index"))
 
     return app
 

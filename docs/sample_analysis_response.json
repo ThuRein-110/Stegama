@@ -1,0 +1,79 @@
+{
+  "product": "Stegama",
+  "scan_mode": {
+    "key": "artifact",
+    "label": "Suspicious Artifact Triage",
+    "description": "Defensive DFIR pass for masquerading, payload hints, and analyst prioritization."
+  },
+  "overview": {
+    "file_name": "challenge.jpg",
+    "extension": ".jpg",
+    "detected_real_file_type": "JPEG image data",
+    "mime_type": "image/jpeg",
+    "file_size": "184.2 KB",
+    "hashes": {
+      "md5": "example-md5",
+      "sha1": "example-sha1",
+      "sha256": "example-sha256"
+    },
+    "scan_timestamp": "2026-04-18T14:45:00+00:00",
+    "overall_suspicion_score": 72,
+    "verdict": "High Suspicion"
+  },
+  "findings": [
+    {
+      "title": "Appended data after valid file marker",
+      "severity": "High",
+      "category": "Steganography",
+      "explanation": "Bytes exist after an expected image end marker, which is a common hiding location.",
+      "evidence": "4096 trailing byte(s) after JPEG EOI"
+    }
+  ],
+  "entropy": {
+    "overall_entropy": 7.41,
+    "window_size": 4096,
+    "windows_analyzed": 46,
+    "suspicious_sections": [
+      {
+        "id": "SEC-001",
+        "offset_range": "0x0002A000-0x0002AFFF",
+        "size": "4.0 KB",
+        "entropy": 7.82,
+        "reason": "Suspicious file tail",
+        "severity": "High",
+        "confidence": "High",
+        "analyst_note": "High entropy near the end of file can indicate appended compressed or encoded data."
+      }
+    ]
+  },
+  "strings": {
+    "stats": {
+      "total_extracted": 120,
+      "suspicious_count": 2,
+      "high_severity_count": 1,
+      "medium_severity_count": 1
+    },
+    "suspicious_items": [
+      {
+        "value": "cGljb0NURnt0aGVfbTN0YWRhdGFfMXNfbW9kaWZpZWR9",
+        "keywords": ["base64-like"],
+        "severity": "Medium",
+        "note": "Readable string matches a base64-like character profile."
+      }
+    ]
+  },
+  "adversarial_assessment": [
+    "Entropy spike near file tail may suggest compressed, encrypted, or encoded payload material.",
+    "Embedded readable strings could indicate operator error, hidden instructions, or CTF clue placement."
+  ],
+  "analyst_summary": {
+    "bullets": [
+      "High: Appended data after valid file marker (Steganography)"
+    ],
+    "paragraph": "Stegama analyzed challenge.jpg and prioritized observable forensic evidence for defensive review.",
+    "recommended_next_actions": [
+      "Review suspicious offsets before attempting extraction.",
+      "Preserve the original uploaded file and generated report as evidence."
+    ]
+  }
+}

@@ -3,101 +3,361 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scan Result</title>
+    <title>Stegama Report | {{ result.filename }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
-<div class="page-shell">
-    <header class="hero compact">
-        <p class="eyebrow">analysis result</p>
-        <h1>{{ result.filename }}</h1>
-        <p class="subtitle">Verdict: <strong>{{ result.verdict }}</strong> | Score: <strong>{{ result.score }}/100</strong></p>
-        <a class="secondary-btn" href="{{ url_for('download_report', filename=report_filename) }}">Download JSON report</a>
-        <a class="text-link" href="{{ url_for('index') }}">Analyze another file</a>
-    </header>
+<body class="result-page">
+<header class="site-nav">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="Stegama home">
+        <span class="brand-mark">S</span>
+        <span>Stegama</span>
+    </a>
+    <nav class="nav-links" aria-label="Report actions">
+        <a href="{{ url_for('download_report', filename=report_filename) }}">Download JSON</a>
+        <a href="{{ url_for('index') }}">New analysis</a>
+    </nav>
+</header>
 
-    <section class="grid three-col">
-        <article class="card stat-card">
-            <span class="label">Size</span>
-            <strong>{{ result.size_bytes }} bytes</strong>
-        </article>
-        <article class="card stat-card">
-            <span class="label">SHA-256</span>
-            <strong class="mono small">{{ result.sha256 }}</strong>
-        </article>
-        <article class="card stat-card">
-            <span class="label">File tool</span>
-            <strong>{{ result.file_type.stdout if result.file_type.stdout else result.file_type.error }}</strong>
-        </article>
+<main class="report-shell">
+    <section class="report-hero">
+        <div class="score-dial" style="--score-percent: {{ result.score }}%;">
+            <span>{{ result.score }}</span>
+            <small>/100</small>
+        </div>
+        <div class="report-title">
+            <p class="eyebrow">Forensic report</p>
+            <h1>{{ result.filename }}</h1>
+            <p>{{ result.analyst_summary.paragraph }}</p>
+        </div>
+        <div class="report-status">
+            <span class="status-pill verdict-{{ result.verdict|lower|replace(' ', '-') }}">{{ result.verdict }}</span>
+            <span class="status-pill">{{ result.scan_mode.label }}</span>
+        </div>
     </section>
 
-    <section class="card">
-        <h2>Findings</h2>
-        {% if result.findings %}
-            <ul>
-                {% for item in result.findings %}
-                    <li>{{ item }}</li>
+    <nav class="tab-nav" aria-label="Result sections">
+        <button class="tab-button is-active" type="button" data-tab-target="overview">Overview</button>
+        <button class="tab-button" type="button" data-tab-target="findings">Findings</button>
+        <button class="tab-button" type="button" data-tab-target="sections">Suspicious Sections</button>
+        <button class="tab-button" type="button" data-tab-target="strings">Strings</button>
+        <button class="tab-button" type="button" data-tab-target="hex">Hex</button>
+        <button class="tab-button" type="button" data-tab-target="metadata">Metadata</button>
+        <button class="tab-button" type="button" data-tab-target="stego">Stego Indicators</button>
+        <button class="tab-button" type="button" data-tab-target="summary">Analyst Summary</button>
+    </nav>
+
+    <section class="tab-panel is-active" id="overview">
+        <div class="overview-grid">
+            <article class="report-panel">
+                <div class="panel-heading">
+                    <h2>File identity</h2>
+                    <span class="status-pill severity-low">Evidence</span>
+                </div>
+                <dl class="facts-grid">
+                    <div><dt>File name</dt><dd>{{ result.overview.file_name }}</dd></div>
+                    <div><dt>Extension</dt><dd>{{ result.overview.extension }}</dd></div>
+                    <div><dt>Detected type</dt><dd>{{ result.overview.detected_real_file_type }}</dd></div>
+                    <div><dt>MIME type</dt><dd>{{ result.overview.mime_type }}</dd></div>
+                    <div><dt>File size</dt><dd>{{ result.overview.file_size }}</dd></div>
+                    <div><dt>Scan timestamp</dt><dd>{{ result.overview.scan_timestamp }}</dd></div>
+                </dl>
+            </article>
+
+            <article class="report-panel">
+                <div class="panel-heading">
+                    <h2>Hashes</h2>
+                    <span class="status-pill severity-low">Chain of custody</span>
+                </div>
+                <div class="hash-stack">
+                    <div><span>MD5</span><code>{{ result.hashes.md5 }}</code></div>
+                    <div><span>SHA1</span><code>{{ result.hashes.sha1 }}</code></div>
+                    <div><span>SHA256</span><code>{{ result.hashes.sha256 }}</code></div>
+                </div>
+            </article>
+        </div>
+
+        <div class="kpi-grid">
+            <article class="mini-panel">
+                <span>Entropy</span>
+                <strong>{{ result.entropy.overall_entropy }}</strong>
+                <small>{{ result.entropy.windows_analyzed }} windows</small>
+            </article>
+            <article class="mini-panel">
+                <span>Suspicious strings</span>
+                <strong>{{ result.strings.stats.suspicious_count if result.strings.stats else 0 }}</strong>
+                <small>{{ result.strings.stats.high_severity_count if result.strings.stats else 0 }} high severity</small>
+            </article>
+            <article class="mini-panel">
+                <span>Suspicious sections</span>
+                <strong>{{ result.entropy.suspicious_sections|length }}</strong>
+                <small>offset-prioritized</small>
+            </article>
+            <article class="mini-panel">
+                <span>Trailing bytes</span>
+                <strong>{{ result.trailing_data.trailing_size }}</strong>
+                <small>{{ result.trailing_data.marker or 'no marker hit' }}</small>
+            </article>
+        </div>
+
+        <article class="report-panel">
+            <div class="panel-heading">
+                <h2>Tool status</h2>
+                <span class="status-pill severity-low">Graceful degradation</span>
+            </div>
+            <div class="tool-grid">
+                {% for tool in result.tool_status %}
+                    <div class="tool-item">
+                        <strong>{{ tool.name }}</strong>
+                        <span class="status-pill {{ 'severity-low' if tool.status == 'Available' else 'severity-medium' }}">{{ tool.status }}</span>
+                        <p>{{ tool.label }}: {{ tool.message }}</p>
+                    </div>
                 {% endfor %}
-            </ul>
-        {% else %}
-            <p>No strong indicators were detected by the current checks.</p>
-        {% endif %}
+            </div>
+        </article>
     </section>
 
-    {% if result.flags %}
-    <section class="card flag-card">
-        <h2>Likely flag</h2>
-        {% for flag in result.flags %}
-            <pre class="flag-value">{{ flag }}</pre>
-        {% endfor %}
-    </section>
-    {% endif %}
-
-    {% if result.decoded_clues %}
-    <section class="card">
-        <h2>Decoded clues</h2>
-        <ul>
-            {% for clue in result.decoded_clues %}
-                <li>
-                    <span class="label">{{ clue.source }}</span>
-                    <pre>{{ {'encoded': clue.encoded, 'decoded': clue.decoded} | tojson(indent=2) }}</pre>
-                </li>
+    <section class="tab-panel" id="findings">
+        <div class="finding-grid">
+            {% for finding in result.findings %}
+                <article class="finding-card severity-border-{{ finding.severity|lower }}">
+                    <div class="finding-topline">
+                        <span class="status-pill severity-{{ finding.severity|lower }}">{{ finding.severity }}</span>
+                        <span>{{ finding.category }}</span>
+                    </div>
+                    <h2>{{ finding.title }}</h2>
+                    <p>{{ finding.explanation }}</p>
+                    <code>{{ finding.evidence }}</code>
+                </article>
+            {% else %}
+                <div class="empty-state">No findings were returned by the analyzer.</div>
             {% endfor %}
-        </ul>
-    </section>
-    {% endif %}
-
-    <section class="grid two-col">
-        <article class="card">
-            <h2>Trailing data</h2>
-            <pre>{{ result.trailing_data | tojson(indent=2) }}</pre>
-        </article>
-        <article class="card">
-            <h2>Image summary</h2>
-            <pre>{{ {
-                'dimensions': result.dimensions,
-                'mode': result.mode,
-                'lsb': result.lsb,
-                'zsteg_hits': result.zsteg.interesting_hits if result.zsteg else []
-            } | tojson(indent=2) }}</pre>
-        </article>
+        </div>
     </section>
 
-    <section class="grid two-col">
-        <article class="card">
-            <h2>Suspicious strings</h2>
-            <pre>{{ result.strings.suspicious | tojson(indent=2) }}</pre>
-        </article>
-        <article class="card">
-            <h2>Metadata</h2>
-            <pre>{{ result.metadata.parsed | tojson(indent=2) }}</pre>
+    <section class="tab-panel" id="sections">
+        <article class="report-panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>Suspicious Sections</h2>
+                    <p>High entropy regions, repeated blocks, abrupt transitions, and suspicious file tails.</p>
+                </div>
+                <span class="status-pill severity-high">{{ result.entropy.suspicious_sections|length }} flagged</span>
+            </div>
+            {% if result.entropy.suspicious_sections %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Section ID</th>
+                                <th>Offset Range</th>
+                                <th>Size</th>
+                                <th>Entropy</th>
+                                <th>Suspicion Reason</th>
+                                <th>Severity</th>
+                                <th>Analyst Note</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for section in result.entropy.suspicious_sections %}
+                                <tr>
+                                    <td><code>{{ section.id }}</code></td>
+                                    <td><code>{{ section.offset_range }}</code></td>
+                                    <td>{{ section.size }}</td>
+                                    <td>{{ section.entropy }}</td>
+                                    <td>{{ section.reason }}</td>
+                                    <td><span class="status-pill severity-{{ section.severity|lower }}">{{ section.severity }}</span></td>
+                                    <td>{{ section.analyst_note }} Confidence: {{ section.confidence }}.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">No suspicious entropy sections were prioritized by the built-in heuristic.</div>
+            {% endif %}
         </article>
     </section>
 
-    <section class="card">
-        <h2>Raw strings preview</h2>
-        <pre>{{ result.strings.all[:120] | tojson(indent=2) }}</pre>
+    <section class="tab-panel" id="strings">
+        <div class="panel-toolbar">
+            <input class="search-input" type="search" data-filter-input="stringsTable" placeholder="Filter extracted strings">
+            <span class="status-pill severity-medium">{{ result.strings.stats.suspicious_count if result.strings.stats else 0 }} suspicious</span>
+        </div>
+        <article class="report-panel">
+            <div class="panel-heading"><h2>Suspicious strings</h2><span class="status-pill severity-high">Keyword triage</span></div>
+            {% if result.strings.suspicious_items %}
+                <div class="table-wrap">
+                    <table id="stringsTable">
+                        <thead><tr><th>Severity</th><th>Keywords</th><th>String</th><th>Analyst hint</th></tr></thead>
+                        <tbody>
+                        {% for item in result.strings.suspicious_items %}
+                            <tr>
+                                <td><span class="status-pill severity-{{ item.severity|lower }}">{{ item.severity }}</span></td>
+                                <td>{{ item.keywords|join(', ') }}</td>
+                                <td><code>{{ item.value }}</code></td>
+                                <td>{{ item.note }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">No suspicious printable strings matched the current keyword set.</div>
+            {% endif %}
+        </article>
+        <details class="raw-block">
+            <summary>Normal strings preview</summary>
+            <pre>{{ result.strings.normal | tojson(indent=2) }}</pre>
+        </details>
     </section>
-</div>
+
+    <section class="tab-panel" id="hex">
+        <div class="overview-grid">
+            <article class="report-panel">
+                <div class="panel-heading"><h2>Magic bytes and signature</h2><span class="status-pill {{ 'severity-low' if result.binary.signature.extension_matches else 'severity-critical' }}">{{ 'Match' if result.binary.signature.extension_matches else 'Mismatch' }}</span></div>
+                <dl class="facts-grid">
+                    <div><dt>Magic bytes</dt><dd><code>{{ result.binary.signature.magic_hex }}</code></dd></div>
+                    <div><dt>Detected type</dt><dd>{{ result.binary.signature.detected_type }}</dd></div>
+                    <div><dt>Detected MIME</dt><dd>{{ result.binary.signature.detected_mime }}</dd></div>
+                    <div><dt>Extension MIME</dt><dd>{{ result.binary.signature.mime_from_extension or 'unknown' }}</dd></div>
+                </dl>
+            </article>
+            <article class="report-panel">
+                <div class="panel-heading"><h2>Trailing data</h2><span class="status-pill {{ 'severity-high' if result.trailing_data.has_trailing_data else 'severity-low' }}">{{ 'Present' if result.trailing_data.has_trailing_data else 'Not observed' }}</span></div>
+                <pre>{{ result.trailing_data | tojson(indent=2) }}</pre>
+            </article>
+        </div>
+        <div class="overview-grid">
+            <article class="report-panel">
+                <div class="panel-heading"><h2>First bytes</h2><span>{{ result.binary.first_bytes.offset_range }}</span></div>
+                {% for row in result.binary.first_bytes.rows %}
+                    <div class="hex-row"><code>{{ row.offset }}</code><code>{{ row.hex }}</code><span>{{ row.ascii }}</span></div>
+                {% endfor %}
+            </article>
+            <article class="report-panel">
+                <div class="panel-heading"><h2>Last bytes</h2><span>{{ result.binary.last_bytes.offset_range }}</span></div>
+                {% for row in result.binary.last_bytes.rows %}
+                    <div class="hex-row"><code>{{ row.offset }}</code><code>{{ row.hex }}</code><span>{{ row.ascii }}</span></div>
+                {% endfor %}
+            </article>
+        </div>
+        <article class="report-panel">
+            <div class="panel-heading"><h2>Suspicious binary patterns</h2><span class="status-pill severity-medium">{{ result.binary.binary_patterns|length }} markers</span></div>
+            {% if result.binary.binary_patterns %}
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Offset</th><th>Pattern</th><th>Severity</th><th>Analyst note</th></tr></thead>
+                        <tbody>
+                        {% for pattern in result.binary.binary_patterns %}
+                            <tr>
+                                <td><code>{{ pattern.offset_hex }}</code></td>
+                                <td>{{ pattern.label }}</td>
+                                <td><span class="status-pill severity-{{ pattern.severity|lower }}">{{ pattern.severity }}</span></td>
+                                <td>{{ pattern.note }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">No embedded marker patterns matched the built-in byte signature list.</div>
+            {% endif %}
+        </article>
+    </section>
+
+    <section class="tab-panel" id="metadata">
+        <div class="overview-grid">
+            <article class="report-panel">
+                <div class="panel-heading"><h2>Metadata notes</h2><span class="status-pill severity-medium">{{ result.metadata_notes|length }} note(s)</span></div>
+                {% if result.metadata_notes %}
+                    <div class="note-list">
+                        {% for note in result.metadata_notes %}
+                            <div class="note-item">
+                                <span class="status-pill severity-{{ note.severity|lower }}">{{ note.severity }}</span>
+                                <strong>{{ note.title }}</strong>
+                                <p>{{ note.note }}</p>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state">No suspicious metadata notes were produced.</div>
+                {% endif %}
+            </article>
+            <article class="report-panel">
+                <div class="panel-heading"><h2>Embedded metadata</h2><span>{{ result.metadata.parsed|length }} field(s)</span></div>
+                <pre>{{ result.metadata.parsed | tojson(indent=2) }}</pre>
+            </article>
+        </div>
+    </section>
+
+    <section class="tab-panel" id="stego">
+        <div class="finding-grid">
+            {% for indicator in result.stego_indicators %}
+                <article class="finding-card severity-border-{{ indicator.severity|lower }}">
+                    <div class="finding-topline">
+                        <span class="status-pill severity-{{ indicator.severity|lower }}">{{ indicator.severity }}</span>
+                        <span>{{ indicator.status }}</span>
+                    </div>
+                    <h2>{{ indicator.name }}</h2>
+                    <p>{{ indicator.explanation }}</p>
+                </article>
+            {% endfor %}
+        </div>
+        <details class="raw-block">
+            <summary>LSB preview and zsteg output</summary>
+            <pre>{{ {'lsb': result.lsb if result.lsb else {}, 'zsteg': result.zsteg if result.zsteg else {}} | tojson(indent=2) }}</pre>
+        </details>
+    </section>
+
+    <section class="tab-panel" id="summary">
+        <div class="overview-grid">
+            <article class="report-panel">
+                <div class="panel-heading"><h2>Analyst Summary</h2><span class="status-pill verdict-{{ result.verdict|lower|replace(' ', '-') }}">{{ result.verdict }}</span></div>
+                <ul class="summary-list">
+                    {% for item in result.analyst_summary.bullets %}
+                        <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+                <p>{{ result.analyst_summary.paragraph }}</p>
+            </article>
+            <article class="report-panel accent-panel">
+                <div class="panel-heading"><h2>Adversarial Assessment</h2><span class="status-pill severity-medium">Hypothesis</span></div>
+                <ul class="summary-list">
+                    {% for item in result.adversarial_assessment %}
+                        <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </article>
+        </div>
+        <div class="overview-grid">
+            <article class="report-panel">
+                <div class="panel-heading"><h2>Recommended next actions</h2><span class="status-pill severity-low">Defensive</span></div>
+                <ul class="summary-list">
+                    {% for action in result.analyst_summary.recommended_next_actions %}
+                        <li>{{ action }}</li>
+                    {% endfor %}
+                </ul>
+            </article>
+            <article class="report-panel flag-card">
+                <div class="panel-heading"><h2>CTF clues</h2><span class="status-pill severity-high">{{ result.flags|length }} flag(s)</span></div>
+                {% if result.flags %}
+                    {% for flag in result.flags %}
+                        <pre class="flag-value">{{ flag }}</pre>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">No flag-like token was recovered.</div>
+                {% endif %}
+                {% if result.decoded_clues %}
+                    <details class="raw-block" open>
+                        <summary>Decoded clues</summary>
+                        <pre>{{ result.decoded_clues | tojson(indent=2) }}</pre>
+                    </details>
+                {% endif %}
+            </article>
+        </div>
+    </section>
+</main>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

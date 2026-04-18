@@ -1,87 +1,100 @@
-# StegDetect CTF Web
+# Stegama
 
-A starter Flask web app for **CTF-style steganography triage**.
+Stegama is a defensive web application for steganography detection, suspicious file triage, and CTF-style forensic analysis. It is designed as a hybrid of a CTF investigation toolkit, a SOC artifact triage dashboard, and a DFIR first-look report console.
 
-## Features
+## Scope
 
-- Upload a file from the browser
-- Run `file` to detect the real file type
-- Run `strings` to extract printable content
-- Run `exiftool -j` to parse metadata
-- Detect simple appended/trailing data in PNG/JPG/GIF
-- Generate a basic RGB LSB preview for images
-- Run `zsteg -a` for PNG/BMP if installed
-- Save a JSON report for each scan
+Stegama performs static, defensive analysis only. It does not execute uploaded artifacts, deliver exploits, automate credential attacks, brute force targets, or provide offensive workflows.
 
-## Project structure
+## Core Capabilities
+
+- Drag-and-drop artifact upload with scan mode selection
+- MD5, SHA1, and SHA256 hashing
+- Magic byte and extension mismatch review
+- MIME and first/last byte previews
+- Printable string extraction with suspicious keyword severity
+- CTF flag and base64-style clue detection
+- Metadata extraction with graceful fallback when `exiftool` is unavailable
+- Image-focused LSB, channel, tail, and zsteg-assisted triage
+- Entropy analysis with suspicious offset section prioritization
+- Defensive adversarial assessment and analyst next actions
+
+## Project Structure
 
 ```txt
 steg-detect-web/
 ├── app.py
+├── Procfile
+├── render.yaml
 ├── requirements.txt
 ├── README.md
+├── docs/
+│   └── sample_analysis_response.json
 ├── reports/
 ├── uploads/
 ├── static/
-│   ├── css/style.css
-│   └── js/app.js
+│   ├── css/
+│   │   └── style.css
+│   └── js/
+│       └── app.js
 ├── templates/
 │   ├── index.html
 │   └── result.html
 └── tools/
     ├── analyzer.py
+    ├── binary_checks.py
+    ├── ctf_checks.py
+    ├── entropy_checks.py
     ├── helpers.py
     ├── image_checks.py
     └── tool_checks.py
 ```
 
-## Install
-
-Create a virtual environment and install Flask with pip. Flask's docs show installation with `pip install Flask`. citeturn941174search0turn941174search6
+## Run Locally
 
 ```bash
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Install base CLI tools:
-
-```bash
-# Ubuntu / Debian
-sudo apt update
-sudo apt install file binutils libimage-exiftool-perl ruby-full
-sudo gem install zsteg
-```
-
-ExifTool is a command-line application for reading metadata from many file types, and it can be run directly after installation. citeturn941174search7turn941174search16
-
-zsteg is designed to detect hidden data in PNG and BMP files, and its README documents installation with `gem install zsteg`. citeturn941174search2turn941174search5
-
-## Run
-
-```bash
 python app.py
 ```
 
-Open:
+On Windows PowerShell:
 
-```txt
-http://127.0.0.1:5000
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python app.py
 ```
 
-## API
+Open `http://127.0.0.1:10000`.
 
-`POST /api/analyze` with multipart form field `file`
+## Render Deployment
 
-Example:
+Use a Render Web Service, not a Static Site.
+
+Build command:
 
 ```bash
-curl -F "file=@challenge.png" http://127.0.0.1:5000/api/analyze
+pip install -r requirements.txt
 ```
 
-## Notes
+Start command:
 
-- This starter app is for **detection / triage**, not full extraction.
-- It is useful for CTF workflows where you want a fast first-pass dashboard.
-- Add optional modules later for steghide, binwalk, foremost, or custom extractors.
+```bash
+gunicorn app:app --bind 0.0.0.0:$PORT
+```
+
+`render.yaml` and `Procfile` are included for deployment-friendly defaults.
+
+## Optional External Tools
+
+Stegama works without these tools and shows unavailable states gracefully:
+
+- `file`
+- `strings`
+- `exiftool`
+- `zsteg`
+
+When they are missing, Python fallback analyzers still provide metadata, printable strings, binary previews, entropy sections, and CTF clue detection where possible.
