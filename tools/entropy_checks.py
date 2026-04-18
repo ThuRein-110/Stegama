@@ -8,8 +8,8 @@ from .helpers import hex_range, human_size
 
 
 def analyze_entropy(path: Path, window_size: int = 4096) -> dict:
-    data = path.read_bytes()
-    if not data:
+    file_size = path.stat().st_size
+    if file_size == 0:
         return {
             "overall_entropy": 0,
             "window_size": window_size,
@@ -18,23 +18,30 @@ def analyze_entropy(path: Path, window_size: int = 4096) -> dict:
             "notes": ["Empty file; entropy analysis was not applicable."],
         }
 
-    effective_window = min(window_size, max(512, len(data)))
+    effective_window = min(window_size, max(512, file_size))
     windows = []
-    for start in range(0, len(data), effective_window):
-        chunk = data[start:start + effective_window]
-        windows.append({
-            "start": start,
-            "end": start + len(chunk) - 1,
-            "length": len(chunk),
-            "entropy": round(shannon_entropy(chunk), 3),
-            "unique_ratio": round(len(set(chunk)) / max(1, len(chunk)), 4),
-        })
+    overall_counts = Counter()
+    start = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(effective_window)
+            if not chunk:
+                break
+            overall_counts.update(chunk)
+            windows.append({
+                "start": start,
+                "end": start + len(chunk) - 1,
+                "length": len(chunk),
+                "entropy": round(shannon_entropy(chunk), 3),
+                "unique_ratio": round(len(set(chunk)) / max(1, len(chunk)), 4),
+            })
+            start += len(chunk)
 
     sections = []
-    sections.extend(flag_high_entropy_regions(windows, len(data)))
+    sections.extend(flag_high_entropy_regions(windows, file_size))
     sections.extend(flag_repeated_regions(windows))
     sections.extend(flag_entropy_changes(windows))
-    sections.extend(flag_suspicious_tail(windows, len(data)))
+    sections.extend(flag_suspicious_tail(windows, file_size))
     sections = dedupe_sections(sections)
 
     for index, section in enumerate(sections, start=1):
@@ -47,7 +54,7 @@ def analyze_entropy(path: Path, window_size: int = 4096) -> dict:
         notes.append("No high-priority entropy sections were identified by the built-in heuristic.")
 
     return {
-        "overall_entropy": round(shannon_entropy(data), 3),
+        "overall_entropy": round(entropy_from_counts(overall_counts, file_size), 3),
         "window_size": effective_window,
         "windows_analyzed": len(windows),
         "suspicious_sections": sections[:18],
@@ -60,6 +67,12 @@ def shannon_entropy(data: bytes) -> float:
         return 0.0
     counts = Counter(data)
     length = len(data)
+    return -sum((count / length) * math.log2(count / length) for count in counts.values())
+
+
+def entropy_from_counts(counts: Counter, length: int) -> float:
+    if length <= 0:
+        return 0.0
     return -sum((count / length) * math.log2(count / length) for count in counts.values())
 
 

@@ -19,13 +19,13 @@ SIGNATURES = [
 
 
 def analyze_binary(path: Path) -> dict:
-    data = path.read_bytes()
+    file_size = path.stat().st_size
+    first_bytes = read_first_bytes(path, 4096)
+    last_bytes = read_last_bytes(path, 128)
     extension = path.suffix.lower()
-    signature = detect_signature(data, extension)
-    first_bytes = data[:128]
-    last_bytes = data[-128:] if data else b""
+    signature = detect_signature(first_bytes, extension)
 
-    patterns = detect_binary_patterns(data)
+    patterns = detect_binary_patterns(path)
     mismatch = not signature["extension_matches"] and signature["detected_type"] != "Unknown binary"
     notes = list(signature["notes"])
     if mismatch:
@@ -37,11 +37,23 @@ def analyze_binary(path: Path) -> dict:
         "extension": extension or "(none)",
         "mime_type": signature["mime_from_extension"] or signature["detected_mime"],
         "signature": signature,
-        "first_bytes": format_bytes(first_bytes, 0),
-        "last_bytes": format_bytes(last_bytes, max(0, len(data) - len(last_bytes))),
+        "first_bytes": format_bytes(first_bytes[:128], 0),
+        "last_bytes": format_bytes(last_bytes, max(0, file_size - len(last_bytes))),
         "binary_patterns": patterns,
         "notes": notes,
     }
+
+
+def read_first_bytes(path: Path, size: int) -> bytes:
+    with path.open("rb") as handle:
+        return handle.read(size)
+
+
+def read_last_bytes(path: Path, size: int) -> bytes:
+    file_size = path.stat().st_size
+    with path.open("rb") as handle:
+        handle.seek(max(0, file_size - size))
+        return handle.read(size)
 
 
 def detect_signature(data: bytes, extension: str) -> dict:
@@ -84,7 +96,7 @@ def detect_signature(data: bytes, extension: str) -> dict:
     }
 
 
-def detect_binary_patterns(data: bytes) -> list[dict]:
+def detect_binary_patterns(path: Path) -> list[dict]:
     markers = [
         {"label": "Embedded ZIP marker", "needle": b"PK\x03\x04", "severity": "High", "note": "Archive content may be embedded or appended."},
         {"label": "Windows PE marker", "needle": b"MZ", "severity": "High", "note": "Executable header-like bytes appear inside the artifact."},
@@ -94,25 +106,38 @@ def detect_binary_patterns(data: bytes) -> list[dict]:
         {"label": "Download command text", "needle": b"wget", "severity": "Medium", "note": "Network retrieval keyword appears in binary content."},
         {"label": "Base64 marker text", "needle": b"base64", "severity": "Medium", "note": "Encoding keyword appears in readable content."},
     ]
-    lowered = data.lower()
     patterns = []
     seen = set()
+    chunk_size = 1024 * 1024
+    overlap_size = max(len(marker["needle"]) for marker in markers) - 1
+    previous_tail = b""
+    offset_base = 0
 
-    for marker in markers:
-        offset = lowered.find(marker["needle"].lower())
-        if offset == -1:
-            continue
-        key = (marker["label"], offset)
-        if key in seen:
-            continue
-        seen.add(key)
-        patterns.append({
-            "label": marker["label"],
-            "offset": offset,
-            "offset_hex": f"0x{offset:08X}",
-            "severity": marker["severity"],
-            "note": marker["note"],
-        })
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            window = previous_tail + chunk
+            lowered = window.lower()
+            window_base = offset_base - len(previous_tail)
+            for marker in markers:
+                if marker["label"] in seen:
+                    continue
+                found_at = lowered.find(marker["needle"].lower())
+                if found_at == -1:
+                    continue
+                offset = window_base + found_at
+                seen.add(marker["label"])
+                patterns.append({
+                    "label": marker["label"],
+                    "offset": offset,
+                    "offset_hex": f"0x{offset:08X}",
+                    "severity": marker["severity"],
+                    "note": marker["note"],
+                })
+            previous_tail = window[-overlap_size:]
+            offset_base += len(chunk)
 
     return patterns[:16]
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PIL import Image, ImageStat
 
 from .tool_checks import run_command
 
-MAX_PIXEL_ANALYSIS_PIXELS = 8_000_000
+MAX_PIXEL_ANALYSIS_PIXELS = 2_000_000
+MAX_PROFILE_PIXELS = 3_000_000
 PROFILE_SAMPLE_SIZE = (768, 768)
 
 
@@ -22,8 +24,22 @@ def analyze_image(path: Path) -> dict:
         with Image.open(path) as img:
             result["dimensions"] = {"width": img.width, "height": img.height}
             result["mode"] = img.mode
-            result["image_profile"] = image_profile(img)
             pixel_count = img.width * img.height
+            if pixel_count > MAX_PROFILE_PIXELS:
+                result["image_profile"] = {
+                    "channel_mean": [],
+                    "channel_stddev": [],
+                    "color_distribution_note": (
+                        "Detailed color distribution scan skipped because the image is too large "
+                        "for Render's 512 MB worker budget."
+                    ),
+                    "severity": "Informational",
+                    "skipped": True,
+                    "pixel_count": pixel_count,
+                }
+            else:
+                result["image_profile"] = image_profile(img)
+
             if pixel_count > MAX_PIXEL_ANALYSIS_PIXELS:
                 result["lsb"] = {
                     "note": (
@@ -42,6 +58,16 @@ def analyze_image(path: Path) -> dict:
         result["image_error"] = str(exc)
 
     if path.suffix.lower() in {".png", ".bmp"}:
+        if os.environ.get("STEGAMA_ENABLE_ZSTEG") != "1":
+            result["zsteg"]["raw"] = {
+                "ok": False,
+                "error": "zsteg disabled by default for Render memory safety",
+                "stdout": "",
+                "stderr": "",
+                "returncode": None,
+            }
+            return result
+
         zsteg_raw = run_command(["zsteg", "-a", str(path)], timeout=20)
         result["zsteg"]["available"] = zsteg_raw.get("returncode") is not None or zsteg_raw.get("ok")
         result["zsteg"]["raw"] = zsteg_raw
@@ -58,7 +84,8 @@ def analyze_image(path: Path) -> dict:
 
 
 def basic_lsb_scan(img: Image.Image) -> dict:
-    rgb = img.convert("RGB")
+    sample_height = max(1, min(img.height, (50000 // max(1, img.width)) + 1))
+    rgb = img.crop((0, 0, img.width, sample_height)).convert("RGB")
     pixels = []
     for index, pixel in enumerate(rgb.getdata()):
         if index >= 50000:

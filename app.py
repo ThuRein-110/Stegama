@@ -17,7 +17,7 @@ ALLOWED_EXTENSIONS = {
     "png", "jpg", "jpeg", "bmp", "gif", "webp", "wav", "au", "txt", "bin", "zip",
     "pdf", "docx", "xlsx", "pptx", "jar", "exe", "dll", "elf", "so"
 }
-MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB
+MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20 MB, sized for Render's 512 MB instances
 
 
 def create_app() -> Flask:
@@ -34,6 +34,10 @@ def create_app() -> Flask:
     @app.route("/analysis", methods=["GET"])
     def index():
         return render_template("index.html")
+
+    @app.route("/healthz", methods=["GET"])
+    def healthz():
+        return jsonify({"status": "ok", "service": "stegama"})
 
     @app.route("/analyze", methods=["GET", "POST"])
     def analyze():
@@ -115,7 +119,7 @@ def create_app() -> Flask:
 
     @app.errorhandler(413)
     def file_too_large(_error):
-        flash("Artifact exceeds the 50 MB upload limit.", "error")
+        flash("Artifact exceeds the 20 MB upload limit for this Render instance.", "error")
         return redirect(url_for("index"))
 
     return app

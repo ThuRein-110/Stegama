@@ -9,45 +9,47 @@ Stegama performs static, defensive analysis only. It does not execute uploaded a
 ## Core Capabilities
 
 - Drag-and-drop artifact upload with scan mode selection
+- 20 MB upload limit sized for Render's 512 MB instances
 - MD5, SHA1, and SHA256 hashing
 - Magic byte and extension mismatch review
 - MIME and first/last byte previews
-- Printable string extraction with suspicious keyword severity
+- Memory-safe printable string extraction with suspicious keyword severity
 - CTF flag and base64-style clue detection
 - Metadata extraction with graceful fallback when `exiftool` is unavailable
-- Image-focused LSB, channel, tail, and zsteg-assisted triage
-- Entropy analysis with suspicious offset section prioritization
+- Image-focused LSB, channel, tail, and zsteg-assisted triage with large-image safety skips
+- Streaming entropy analysis with suspicious offset section prioritization
 - Defensive adversarial assessment and analyst next actions
 
 ## Project Structure
 
 ```txt
 steg-detect-web/
-├── app.py
-├── Procfile
-├── render.yaml
-├── requirements.txt
-├── README.md
-├── docs/
-│   └── sample_analysis_response.json
-├── reports/
-├── uploads/
-├── static/
-│   ├── css/
-│   │   └── style.css
-│   └── js/
-│       └── app.js
-├── templates/
-│   ├── index.html
-│   └── result.html
-└── tools/
-    ├── analyzer.py
-    ├── binary_checks.py
-    ├── ctf_checks.py
-    ├── entropy_checks.py
-    ├── helpers.py
-    ├── image_checks.py
-    └── tool_checks.py
+|-- app.py
+|-- Procfile
+|-- render.yaml
+|-- requirements.txt
+|-- README.md
+|-- docs/
+|   `-- sample_analysis_response.json
+|-- reports/
+|-- uploads/
+|-- static/
+|   |-- css/
+|   |   `-- style.css
+|   `-- js/
+|       `-- app.js
+|-- templates/
+|   |-- error.html
+|   |-- index.html
+|   `-- result.html
+`-- tools/
+    |-- analyzer.py
+    |-- binary_checks.py
+    |-- ctf_checks.py
+    |-- entropy_checks.py
+    |-- helpers.py
+    |-- image_checks.py
+    `-- tool_checks.py
 ```
 
 ## Run Locally
@@ -83,7 +85,13 @@ pip install -r requirements.txt
 Start command:
 
 ```bash
-gunicorn app:app --bind 0.0.0.0:$PORT
+gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 --max-requests 80 --max-requests-jitter 20
+```
+
+Health check endpoint:
+
+```txt
+/healthz
 ```
 
 `render.yaml` and `Procfile` are included for deployment-friendly defaults.
@@ -93,8 +101,7 @@ gunicorn app:app --bind 0.0.0.0:$PORT
 Stegama works without these tools and shows unavailable states gracefully:
 
 - `file`
-- `strings`
 - `exiftool`
 - `zsteg`
 
-When they are missing, Python fallback analyzers still provide metadata, printable strings, binary previews, entropy sections, and CTF clue detection where possible.
+Python fallback analyzers provide metadata, printable strings, binary previews, entropy sections, and CTF clue detection where possible. The app avoids capturing large external command output to stay within small Render memory limits.
