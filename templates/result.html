@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Result</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="page-shell">
+    <header class="hero compact">
+        <p class="eyebrow">analysis result</p>
+        <h1>{{ result.filename }}</h1>
+        <p class="subtitle">Verdict: <strong>{{ result.verdict }}</strong> | Score: <strong>{{ result.score }}/100</strong></p>
+        <a class="secondary-btn" href="{{ url_for('download_report', filename=report_filename) }}">Download JSON report</a>
+        <a class="text-link" href="{{ url_for('index') }}">Analyze another file</a>
+    </header>
+
+    <section class="grid three-col">
+        <article class="card stat-card">
+            <span class="label">Size</span>
+            <strong>{{ result.size_bytes }} bytes</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="label">SHA-256</span>
+            <strong class="mono small">{{ result.sha256 }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="label">File tool</span>
+            <strong>{{ result.file_type.stdout if result.file_type.stdout else result.file_type.error }}</strong>
+        </article>
+    </section>
+
+    <section class="card">
+        <h2>Findings</h2>
+        {% if result.findings %}
+            <ul>
+                {% for item in result.findings %}
+                    <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No strong indicators were detected by the current checks.</p>
+        {% endif %}
+    </section>
+
+    <section class="grid two-col">
+        <article class="card">
+            <h2>Trailing data</h2>
+            <pre>{{ result.trailing_data | tojson(indent=2) }}</pre>
+        </article>
+        <article class="card">
+            <h2>Image summary</h2>
+            <pre>{{ {
+                'dimensions': result.dimensions,
+                'mode': result.mode,
+                'lsb': result.lsb,
+                'zsteg_hits': result.zsteg.interesting_hits if result.zsteg else []
+            } | tojson(indent=2) }}</pre>
+        </article>
+    </section>
+
+    <section class="grid two-col">
+        <article class="card">
+            <h2>Suspicious strings</h2>
+            <pre>{{ result.strings.suspicious | tojson(indent=2) }}</pre>
+        </article>
+        <article class="card">
+            <h2>Metadata</h2>
+            <pre>{{ result.metadata.parsed | tojson(indent=2) }}</pre>
+        </article>
+    </section>
+
+    <section class="card">
+        <h2>Raw strings preview</h2>
+        <pre>{{ result.strings.all[:120] | tojson(indent=2) }}</pre>
+    </section>
+</div>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StegDetect CTF</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="hero">
+            <p class="eyebrow">CTF starter</p>
+            <h1>Steganography Detection Dashboard</h1>
+            <p class="subtitle">
+                Upload an image or binary and run quick read-only checks with strings, metadata,
+                trailing-data detection, simple LSB preview, and zsteg where available.
+            </p>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-wrap">
+              {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <main class="card upload-card">
+            <form action="{{ url_for('analyze') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                <label class="dropzone" for="fileInput">
+                    <input id="fileInput" name="file" type="file" required>
+                    <span class="drop-title">Drop file here or tap to choose</span>
+                    <span class="drop-note">PNG, JPG, BMP, GIF, WEBP, WAV, TXT, BIN, ZIP</span>
+                </label>
+                <button class="primary-btn" type="submit">Analyze file</button>
+            </form>
+        </main>
+
+        <section class="grid two-col">
+            <article class="card">
+                <h2>Included checks</h2>
+                <ul>
+                    <li>Real file type check</li>
+                    <li>SHA-256 hash</li>
+                    <li>Printable strings scan</li>
+                    <li>Metadata extraction</li>
+                    <li>Appended / trailing data detection</li>
+                    <li>Basic LSB preview</li>
+                    <li>zsteg for PNG/BMP when installed</li>
+                </ul>
+            </article>
+
+            <article class="card">
+                <h2>Notes</h2>
+                <ul>
+                    <li>This is a detection dashboard, not a full extractor.</li>
+                    <li>Best for CTF triage and quick forensics.</li>
+                    <li>Heavy tools can be added later as separate modules.</li>
+                </ul>
+            </article>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
