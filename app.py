@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 import secrets
+import time
+from collections import deque
 from pathlib import Path
 
-from flask import Flask, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, current_app, flash, g, jsonify, redirect, render_template, request, send_from_directory, url_for
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from tools.analyzer import analyze_file
@@ -14,6 +20,9 @@ BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 REPORT_DIR = BASE_DIR / "reports"
 SITE_URL = "https://stegama.onrender.com"
+REPORT_NAME_RE = re.compile(r"^[a-f0-9]{32}_[A-Za-z0-9_.-]+\.json$")
+SCAN_MODES = {"quick", "deep", "image", "artifact"}
+PRIVATE_ENDPOINTS = {"analyze", "api_analyze", "download_report"}
 SEO_PAGES = [
     {
         "slug": "guide",
@@ -193,17 +202,79 @@ ALLOWED_EXTENSIONS = {
     "pdf", "docx", "xlsx", "pptx", "jar", "exe", "dll", "elf", "so"
 }
 MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20 MB, sized for Render's 512 MB instances
+RATE_LIMIT_MAX_ANALYSES = int(os.environ.get("STEGAMA_RATE_LIMIT_MAX_ANALYSES", "12"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("STEGAMA_RATE_LIMIT_WINDOW_SECONDS", str(15 * 60)))
+ARTIFACT_RETENTION_SECONDS = int(float(os.environ.get("STEGAMA_RETENTION_HOURS", "24")) * 60 * 60)
+ARTIFACT_CLEANUP_INTERVAL_SECONDS = 10 * 60
+CSRF_MAX_AGE_SECONDS = 2 * 60 * 60
+
+_analysis_attempts: dict[str, deque[float]] = {}
+_last_artifact_cleanup = 0.0
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-me")
-    app.config["UPLOAD_FOLDER"] = str(UPLOAD_DIR)
-    app.config["REPORT_FOLDER"] = str(REPORT_DIR)
-    app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.config.update(
+        SECRET_KEY=configured_secret_key(),
+        UPLOAD_FOLDER=str(UPLOAD_DIR),
+        REPORT_FOLDER=str(REPORT_DIR),
+        MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=env_flag("SESSION_COOKIE_SECURE", default=False),
+    )
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    @app.before_request
+    def prepare_security_context():
+        g.csp_nonce = secrets.token_urlsafe(16)
+
+    @app.after_request
+    def add_security_headers(response):
+        nonce = getattr(g, "csp_nonce", "")
+        csp = (
+            "default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "font-src 'self'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'"
+        )
+        if request.is_secure:
+            csp = f"{csp}; upgrade-insecure-requests"
+
+        response.headers.setdefault("Content-Security-Policy", csp)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+        )
+        if request.is_secure:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+        if request.endpoint in PRIVATE_ENDPOINTS:
+            response.headers["Cache-Control"] = "no-store, private, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["X-Robots-Tag"] = "noindex, noarchive, nosnippet"
+
+        return response
+
+    @app.context_processor
+    def inject_security_helpers():
+        return {
+            "csrf_token": csrf_token,
+            "csp_nonce": lambda: getattr(g, "csp_nonce", ""),
+        }
 
     @app.route("/", methods=["GET"])
     @app.route("/analysis", methods=["GET"])
@@ -243,85 +314,253 @@ def create_app() -> Flask:
         if request.method == "GET":
             return redirect(url_for("index"))
 
-        if "file" not in request.files:
-            flash("No file part found in request.", "error")
+        maybe_cleanup_old_artifacts()
+
+        limited = reject_if_rate_limited(json_response=False)
+        if limited:
+            return limited
+
+        if not validate_csrf_token():
+            flash("Security check failed. Please refresh the page and upload the file again.", "error")
             return redirect(url_for("index"))
 
-        uploaded = request.files["file"]
-        if uploaded.filename == "":
-            flash("Please choose a file.", "error")
+        uploaded, filename, error_message = uploaded_file_from_request()
+        if error_message:
+            flash(error_message, "error")
             return redirect(url_for("index"))
 
-        filename = secure_filename(uploaded.filename)
-        if not allowed_file(filename):
-            flash("Unsupported file type for this starter version.", "error")
-            return redirect(url_for("index"))
-
-        token = secrets.token_hex(8)
-        saved_name = f"{token}_{filename}"
-        save_path = UPLOAD_DIR / saved_name
-        uploaded.save(save_path)
-
-        scan_mode = request.form.get("scan_mode", "quick")
         try:
-            result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
-            report_path = REPORT_DIR / f"{save_path.stem}.json"
-            report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception as exc:
+            result, report_filename = analyze_uploaded_file(uploaded, filename, request.form.get("scan_mode"))
+        except Exception:
+            reference = secrets.token_hex(6)
             app.logger.exception("Stegama analysis failed for %s", filename)
             return render_template(
                 "error.html",
                 title="Analysis could not complete",
-                message="Stegama safely stopped this scan instead of returning a broken gateway response.",
-                detail=str(exc),
+                message=(
+                    "Stegama safely stopped this scan instead of exposing internal error details. "
+                    f"Reference: {reference}."
+                ),
+                reference=reference,
             ), 500
 
-        return render_template("result.html", result=result, report_filename=report_path.name)
+        return render_template("result.html", result=result, report_filename=report_filename)
 
     @app.route("/api/analyze", methods=["POST"])
     def api_analyze():
-        if "file" not in request.files:
-            return jsonify({"error": "missing file field"}), 400
+        maybe_cleanup_old_artifacts()
 
-        uploaded = request.files["file"]
-        if uploaded.filename == "":
-            return jsonify({"error": "empty filename"}), 400
+        limited = reject_if_rate_limited(json_response=True)
+        if limited:
+            return limited
 
-        filename = secure_filename(uploaded.filename)
-        if not allowed_file(filename):
-            return jsonify({"error": "unsupported file type"}), 400
+        uploaded, filename, error_message = uploaded_file_from_request()
+        if error_message:
+            return jsonify({"error": "invalid_upload", "message": error_message}), 400
 
-        token = secrets.token_hex(8)
-        saved_name = f"{token}_{filename}"
-        save_path = UPLOAD_DIR / saved_name
-        uploaded.save(save_path)
-
-        scan_mode = request.form.get("scan_mode", "quick")
         try:
-            result = analyze_file(save_path, original_name=filename, scan_mode=scan_mode)
-            report_path = REPORT_DIR / f"{save_path.stem}.json"
-            report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception as exc:
+            result, report_filename = analyze_uploaded_file(uploaded, filename, request.form.get("scan_mode"))
+        except Exception:
+            reference = secrets.token_hex(6)
             app.logger.exception("Stegama API analysis failed for %s", filename)
             return jsonify({
                 "error": "analysis_failed",
                 "message": "Stegama safely stopped this scan.",
-                "detail": str(exc),
+                "reference": reference,
             }), 500
 
-        result["report_download"] = url_for("download_report", filename=report_path.name)
+        result["report_download"] = url_for("download_report", filename=report_filename)
         return jsonify(result)
 
-    @app.route("/reports/<path:filename>", methods=["GET"])
+    @app.route("/reports/<filename>", methods=["GET"])
     def download_report(filename: str):
-        return send_from_directory(REPORT_DIR, filename, as_attachment=True)
+        if not is_safe_report_filename(filename):
+            return render_template(
+                "error.html",
+                title="Report not found",
+                message="The requested report link is invalid or has expired.",
+                reference=None,
+            ), 404
+        return send_from_directory(REPORT_DIR, filename, as_attachment=True, mimetype="application/json")
 
     @app.errorhandler(413)
     def file_too_large(_error):
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": "file_too_large",
+                "message": "Artifact exceeds the 20 MB upload limit.",
+            }), 413
         flash("Artifact exceeds the 20 MB upload limit for this Render instance.", "error")
         return redirect(url_for("index"))
 
     return app
+
+
+def configured_secret_key() -> str:
+    key = os.environ.get("SECRET_KEY")
+    if key and len(key) >= 32:
+        return key
+    if key:
+        logging.getLogger(__name__).warning("SECRET_KEY is set but shorter than 32 characters; using an ephemeral key.")
+    else:
+        logging.getLogger(__name__).warning("SECRET_KEY is not set; using an ephemeral key for this process.")
+    return secrets.token_hex(32)
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def csrf_token() -> str:
+    serializer = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="stegama-upload-csrf")
+    return serializer.dumps({"nonce": secrets.token_urlsafe(16), "purpose": "artifact-upload"})
+
+
+def validate_csrf_token() -> bool:
+    supplied = request.form.get("csrf_token", "")
+    if not supplied:
+        return False
+    serializer = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="stegama-upload-csrf")
+    try:
+        payload = serializer.loads(supplied, max_age=CSRF_MAX_AGE_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return False
+    return payload.get("purpose") == "artifact-upload"
+
+
+def reject_if_rate_limited(json_response: bool):
+    allowed, retry_after = record_analysis_attempt()
+    if allowed:
+        return None
+
+    if json_response:
+        response = jsonify({
+            "error": "rate_limited",
+            "message": "Too many analysis requests. Please wait before scanning another artifact.",
+            "retry_after_seconds": retry_after,
+        })
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+
+    flash("Too many analysis requests. Please wait a few minutes before scanning another artifact.", "error")
+    response = redirect(url_for("index"))
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
+
+def record_analysis_attempt() -> tuple[bool, int]:
+    now = time.monotonic()
+    key = client_ip()
+    attempts = _analysis_attempts.setdefault(key, deque())
+    while attempts and now - attempts[0] > RATE_LIMIT_WINDOW_SECONDS:
+        attempts.popleft()
+
+    if len(attempts) >= RATE_LIMIT_MAX_ANALYSES:
+        retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - attempts[0])))
+        return False, retry_after
+
+    attempts.append(now)
+    return True, 0
+
+
+def client_ip() -> str:
+    return request.remote_addr or "unknown"
+
+
+def uploaded_file_from_request():
+    if request.content_length and request.content_length > MAX_CONTENT_LENGTH:
+        return None, "", "Artifact exceeds the 20 MB upload limit for this Render instance."
+    if "file" not in request.files:
+        return None, "", "No file part found in request."
+
+    uploaded = request.files["file"]
+    if uploaded.filename == "":
+        return None, "", "Please choose a file."
+
+    filename = secure_filename(uploaded.filename)
+    if not filename or not allowed_file(filename):
+        return None, "", "Unsupported file type for this starter version."
+
+    return uploaded, filename, None
+
+
+def analyze_uploaded_file(uploaded, filename: str, scan_mode: str | None) -> tuple[dict, str]:
+    token = secrets.token_hex(16)
+    saved_name = f"{token}_{filename}"
+    save_path = safe_child_path(UPLOAD_DIR, saved_name)
+    report_filename = f"{save_path.stem}.json"
+    report_path = safe_child_path(REPORT_DIR, report_filename)
+
+    try:
+        uploaded.save(save_path)
+        result = analyze_file(save_path, original_name=filename, scan_mode=normalize_scan_mode_key(scan_mode))
+        report_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        safe_unlink(save_path, UPLOAD_DIR)
+        return result, report_filename
+    except Exception:
+        safe_unlink(save_path, UPLOAD_DIR)
+        safe_unlink(report_path, REPORT_DIR)
+        raise
+
+
+def normalize_scan_mode_key(mode: str | None) -> str:
+    key = (mode or "quick").lower()
+    return key if key in SCAN_MODES else "quick"
+
+
+def safe_child_path(directory: Path, filename: str) -> Path:
+    directory_resolved = directory.resolve()
+    path = (directory / filename).resolve()
+    if path.parent != directory_resolved:
+        raise ValueError("Unsafe artifact path rejected.")
+    return path
+
+
+def is_safe_report_filename(filename: str) -> bool:
+    if secure_filename(filename) != filename:
+        return False
+    if not REPORT_NAME_RE.fullmatch(filename):
+        return False
+    return safe_child_path(REPORT_DIR, filename).is_file()
+
+
+def maybe_cleanup_old_artifacts() -> None:
+    global _last_artifact_cleanup
+    now = time.monotonic()
+    if now - _last_artifact_cleanup < ARTIFACT_CLEANUP_INTERVAL_SECONDS:
+        return
+    _last_artifact_cleanup = now
+    cleanup_old_artifacts()
+
+
+def cleanup_old_artifacts() -> None:
+    cutoff = time.time() - ARTIFACT_RETENTION_SECONDS
+    for directory in (UPLOAD_DIR, REPORT_DIR):
+        if not directory.exists():
+            continue
+        for path in directory.iterdir():
+            if not path.is_file():
+                continue
+            try:
+                if path.stat().st_mtime < cutoff:
+                    safe_unlink(path, directory)
+            except OSError:
+                logging.getLogger(__name__).exception("Could not clean old artifact: %s", path.name)
+
+
+def safe_unlink(path: Path, directory: Path) -> None:
+    try:
+        resolved = path.resolve()
+        if resolved.parent != directory.resolve():
+            raise ValueError("Refusing to delete outside artifact directory.")
+        if resolved.exists() and resolved.is_file():
+            resolved.unlink()
+    except FileNotFoundError:
+        return
 
 
 def render_seo_page(slug: str):

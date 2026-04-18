@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stegama | {{ title }}</title>
     <meta name="description" content="Stegama safely stopped this steganography and forensic file analysis scan.">
+    <meta name="robots" content="noindex, noarchive, nosnippet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="result-page">
@@ -41,14 +42,11 @@
             <span class="status-pill severity-medium">Handled error</span>
         </div>
         <p>
-            The uploaded artifact was saved, but one analysis module failed. Try a smaller artifact,
-            use Quick Scan, or check Render logs for the full Python traceback.
+            The uploaded artifact was not retained after the failed scan. Try a smaller artifact,
+            use Quick Scan, or check Render logs with the reference if you need the internal traceback.
         </p>
-        {% if detail %}
-            <details class="raw-block">
-                <summary>Error detail</summary>
-                <pre>{{ detail }}</pre>
-            </details>
+        {% if reference %}
+            <p>Reference: <code>{{ reference }}</code></p>
         {% endif %}
     </article>
 </main>

@@ -8,6 +8,16 @@ from pathlib import Path
 
 MAX_STORED_STRINGS = 300
 MAX_STORED_SUSPICIOUS_STRINGS = 80
+MAX_COMMAND_OUTPUT_CHARS = 200_000
+SENSITIVE_METADATA_KEYS = {
+    "SourceFile",
+    "Directory",
+    "FileName",
+    "FilePermissions",
+    "FileAccessDate",
+    "FileModifyDate",
+    "FileInodeChangeDate",
+}
 
 
 def run_command(cmd: list[str], timeout: int = 20) -> dict:
@@ -31,14 +41,14 @@ def run_command(cmd: list[str], timeout: int = 20) -> dict:
         )
         return {
             "ok": proc.returncode == 0,
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
+            "stdout": limit_output(redact_command_paths(proc.stdout, cmd)),
+            "stderr": limit_output(redact_command_paths(proc.stderr, cmd)),
             "returncode": proc.returncode,
         }
     except subprocess.TimeoutExpired:
         return {
             "ok": False,
-            "error": f"Timeout while running: {' '.join(cmd)}",
+            "error": f"Timeout while running external analysis tool: {executable}",
             "stdout": "",
             "stderr": "",
             "returncode": None,
@@ -192,7 +202,7 @@ def run_exiftool(path: Path) -> dict:
         }
     try:
         parsed = json.loads(result["stdout"])
-        return {"parsed": parsed[0] if parsed else {}, "raw": result}
+        return {"parsed": sanitize_metadata(parsed[0] if parsed else {}), "raw": result}
     except json.JSONDecodeError:
         return {"parsed": {}, "raw": result}
 
@@ -232,6 +242,31 @@ def _stringify_metadata_value(value):
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
+def sanitize_metadata(metadata: dict) -> dict:
+    return {
+        key: value
+        for key, value in metadata.items()
+        if str(key) not in SENSITIVE_METADATA_KEYS
+    }
+
+
+def redact_command_paths(text: str, cmd: list[str]) -> str:
+    redacted = text or ""
+    for arg in cmd[1:]:
+        value = str(arg)
+        if not value or ("\\" not in value and "/" not in value):
+            continue
+        redacted = redacted.replace(value, "[uploaded-file]")
+        redacted = redacted.replace(value.replace("\\", "/"), "[uploaded-file]")
+    return redacted
+
+
+def limit_output(text: str) -> str:
+    if len(text) <= MAX_COMMAND_OUTPUT_CHARS:
+        return text
+    return f"{text[:MAX_COMMAND_OUTPUT_CHARS]}\n[output truncated for safety]"
 
 
 

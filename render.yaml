@@ -7,3 +7,11 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: SESSION_COOKIE_SECURE
+        value: "1"
+      - key: STEGAMA_RETENTION_HOURS
+        value: "24"
+      - key: STEGAMA_RATE_LIMIT_MAX_ANALYSES
+        value: "12"
+      - key: STEGAMA_RATE_LIMIT_WINDOW_SECONDS
+        value: "900"

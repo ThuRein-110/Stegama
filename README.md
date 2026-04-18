@@ -6,6 +6,17 @@ Stegama is a defensive web application for steganography detection, suspicious f
 
 Stegama performs static, defensive analysis only. It does not execute uploaded artifacts, deliver exploits, automate credential attacks, brute force targets, or provide offensive workflows.
 
+## Security and Privacy Defaults
+
+- Uploaded files are analyzed statically and deleted after the JSON report is generated.
+- Generated reports use 128-bit random filenames, are marked `noindex`, and are sent with `Cache-Control: no-store`.
+- Old reports are cleaned automatically; the default retention window is 24 hours and can be changed with `STEGAMA_RETENTION_HOURS`.
+- Browser uploads use a signed CSRF token, and analysis endpoints have a small in-memory per-IP rate limit.
+- Security headers include CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, Permissions Policy, and HSTS on HTTPS.
+- Server file paths and Python exception details are not returned in reports, API responses, or error pages.
+
+Set a strong `SECRET_KEY` in production so signed tokens and Flask sessions survive restarts. Use at least 32 random characters.
+
 ## Core Capabilities
 
 - Drag-and-drop artifact upload with scan mode selection

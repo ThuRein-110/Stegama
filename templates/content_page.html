@@ -16,7 +16,7 @@
     <meta name="twitter:title" content="{{ page.meta_title }}">
     <meta name="twitter:description" content="{{ page.description }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script type="application/ld+json">
+    <script type="application/ld+json" nonce="{{ csp_nonce() }}">
     {
       "@context": "https://schema.org",
       "@type": "Article",

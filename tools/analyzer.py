@@ -30,8 +30,6 @@ def analyze_file(file_path: Path, original_name: str | None = None, scan_mode: s
         "product": "Stegama",
         "scan_mode": normalize_scan_mode(scan_mode),
         "filename": display_name,
-        "stored_filename": file_path.name,
-        "filepath": str(file_path),
         "extension": suffix or "(none)",
         "size_bytes": size_bytes,
         "size_human": human_size(size_bytes),
@@ -366,7 +364,7 @@ def build_analyst_summary(result: dict) -> dict:
     recommendations = [
         "Review suspicious offsets before attempting extraction.",
         "Inspect tail bytes and compare them against expected file format boundaries.",
-        "Preserve the original uploaded file and generated report as evidence.",
+        "Preserve your original local file and generated report as evidence.",
         "Compare MD5, SHA1, and SHA256 with known-good or challenge-provided values.",
     ]
     if result["trailing_data"].get("has_trailing_data"):

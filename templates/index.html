@@ -16,7 +16,7 @@
     <meta name="twitter:title" content="Stegama - Online Steganography Detection Tool">
     <meta name="twitter:description" content="Free online stego analyzer for CTF players, cybersecurity students, and forensic triage.">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script type="application/ld+json">
+    <script type="application/ld+json" nonce="{{ csp_nonce() }}">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
@@ -77,6 +77,7 @@
                 </div>
 
                 <form class="upload-console" action="{{ url_for('analyze') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="console-heading">
                         <div>
                             <p class="eyebrow">Artifact intake</p>
