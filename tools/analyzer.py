@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .helpers import sha256_file
+from .ctf_checks import extract_ctf_clues
 from .image_checks import analyze_image
 from .tool_checks import (
     detect_trailing_data,
@@ -65,6 +66,15 @@ def analyze_file(file_path: Path) -> dict:
     if result.get("lsb", {}).get("note"):
         score += 10
         findings.append(result["lsb"]["note"])
+
+    ctf_clues = extract_ctf_clues(result)
+    result.update(ctf_clues)
+    if result["decoded_clues"]:
+        score += min(25, 10 * len(result["decoded_clues"]))
+        findings.append(f"Base64-looking clue(s) decoded: {len(result['decoded_clues'])}")
+    if result["flags"]:
+        score += 50
+        findings.append(f"Likely CTF flag found: {result['flags'][0]}")
 
     result["findings"] = findings
     result["score"] = min(100, score)

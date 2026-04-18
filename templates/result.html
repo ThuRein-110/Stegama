@@ -44,6 +44,29 @@
         {% endif %}
     </section>
 
+    {% if result.flags %}
+    <section class="card flag-card">
+        <h2>Likely flag</h2>
+        {% for flag in result.flags %}
+            <pre class="flag-value">{{ flag }}</pre>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if result.decoded_clues %}
+    <section class="card">
+        <h2>Decoded clues</h2>
+        <ul>
+            {% for clue in result.decoded_clues %}
+                <li>
+                    <span class="label">{{ clue.source }}</span>
+                    <pre>{{ {'encoded': clue.encoded, 'decoded': clue.decoded} | tojson(indent=2) }}</pre>
+                </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
     <section class="grid two-col">
         <article class="card">
             <h2>Trailing data</h2>
