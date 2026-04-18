@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://stegama.onrender.com/sitemap.xml

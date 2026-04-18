@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page.meta_title }}</title>
+    <meta name="description" content="{{ page.description }}">
+    <meta name="keywords" content="{{ page.keywords }}">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="{{ canonical_url }}">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="{{ page.meta_title }}">
+    <meta property="og:description" content="{{ page.description }}">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{ page.meta_title }}">
+    <meta name="twitter:description" content="{{ page.description }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": {{ page.title|tojson }},
+      "description": {{ page.description|tojson }},
+      "mainEntityOfPage": "{{ canonical_url }}",
+      "author": {
+        "@type": "Organization",
+        "name": "Stegama"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Stegama"
+      }
+    }
+    </script>
+</head>
+<body class="article-page">
+<header class="site-nav">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="Stegama home">
+        <span class="brand-mark">S</span>
+        <span>Stegama</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+        <a href="{{ url_for('index') }}#analysis">Analyze</a>
+        <a href="{{ url_for('guide') }}">Guide</a>
+        <a href="{{ url_for('learn_steganography') }}">Learn</a>
+        <a href="{{ url_for('ctf_stego_tips') }}">CTF tips</a>
+    </nav>
+</header>
+
+<main>
+    <section class="article-hero">
+        <div>
+            <p class="eyebrow">{{ page.eyebrow }}</p>
+            <h1>{{ page.title }}</h1>
+            <p>{{ page.lede }}</p>
+            <a class="secondary-btn article-action" href="{{ url_for('index') }}#analysis">Analyze a file</a>
+        </div>
+    </section>
+
+    <article class="content-article">
+        {% for section in page.sections %}
+            <section class="article-section">
+                <h2>{{ section.heading }}</h2>
+                <p>{{ section.body }}</p>
+                <ul class="summary-list">
+                    {% for bullet in section.bullets %}
+                        <li>{{ bullet }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endfor %}
+    </article>
+
+    <section class="content-band cta-panel">
+        <div>
+            <p class="eyebrow">Free online analysis</p>
+            <h2>Try Stegama on your next CTF or forensic artifact</h2>
+            <p>
+                Upload an image or file to check for hidden data, suspicious content, metadata clues,
+                entropy anomalies, and report-ready analyst notes.
+            </p>
+        </div>
+        <a class="primary-btn compact-btn" href="{{ url_for('index') }}#analysis">Open Stegama</a>
+    </section>
+</main>
+
+<footer class="site-footer">
+    <div>
+        <a class="brand" href="{{ url_for('index') }}" aria-label="Stegama home">
+            <span class="brand-mark">S</span>
+            <span>Stegama</span>
+        </a>
+        <p>Powered by Stegama, a free steganography detection tool for CTF and forensic triage.</p>
+    </div>
+    <nav class="footer-links" aria-label="Related pages">
+        {% for item in seo_pages %}
+            <a href="{{ item.path }}">{{ item.title }}</a>
+        {% endfor %}
+        <a href="{{ site_url }}/sitemap.xml">Sitemap</a>
+    </nav>
+</footer>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
